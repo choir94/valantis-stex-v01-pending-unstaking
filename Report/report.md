@@ -1,6 +1,6 @@
 ## Bug Description
 
-`stHYPEWithdrawalModule.unstakeToken0Reserves()` records the module's ENTIRE token0 balance as pending-unstaking instead of the requested unstake amount. Any stHYPE donated or sent to the module by third parties is then counted as locked reserves in `STEXAMM.deposit()`/`withdraw()` share pricing, diluting every depositor during the inflation window. Full details and live mainnet state are provided in the attached report.
+`stHYPEWithdrawalModule.unstakeToken0Reserves()` records the module's ENTIRE token0 balance as pending-unstaking instead of the requested unstake amount. Any stHYPE donated or sent to the module by third parties is then counted as locked reserves in `STEXAMM.deposit()`/`withdraw()` share pricing, diluting every depositor during the inflation window. Full details and live mainnet state are provided in the attached repository report.
 
 The recording line:
 
@@ -25,6 +25,16 @@ Attack path (fully permissionless for the trigger):
 4. The phantom persists until the burn settles in the Overseer queue AND the keeper calls `redeemBurnsAndUpdate()`. LST exit queues run on multi-day horizons, so the window lasts days per attack and can be repeated indefinitely by re-donating.
 
 Measured impact (full-stack Foundry PoC, real STEXAMM + Sovereign Pool): a victim depositing 100 WHYPE during the inflated window receives 52.63 shares against a fair value of 66.67, losing 21% of the deposit's value to pre-existing LP positions.
+
+## Impact
+
+Direct value transfer from new depositors to pre-existing LP positions:
+
+- Measured on the full real contract stack (STEXAMM + SovereignPool + withdrawal module, commit 27b5c748db73d5b5e7d7aeaee902b70c2b74a829): a victim depositing 100 WHYPE while 40 phantom stHYPE is recorded receives 52.63 shares against a fair 66.67, a 21% loss on the deposit.
+- The recording flaw is triggered by one permissionless ERC20 transfer; no privileged access needed at any step.
+- Each attack persists for days (Overseer exit queue horizon) and can be re-triggered indefinitely by re-donating.
+- Live mainnet state (HyperEVM chain 999, read-only RPC): `_amountToken0PendingUnstaking` storage holds 35,145.16 stHYPE while the module's actual stHYPE balance is 0; the view feeding live pricing returns 32,382.49, which is 65.7% of the total share-pricing denominator (pool reserves: 10,041 stHYPE + 6,892 WHYPE). Every future donation contaminates this accounting at the next unstake.
+- No direct theft of the phantom itself occurs; the loss materializes as dilution and extraction between user cohorts, which is why the score is capped at High rather than Critical.
 
 ## Risk Breakdown
 
@@ -53,6 +63,7 @@ Further hardening options:
 
 Audited commit: ValantisLabs/valantis-stex@27b5c748db73d5b5e7d7aeaee902b70c2b74a829 (main)
 Mainnet deployment (HyperEVM): withdrawal module 0x69e487aA3132708d08a979b2d07c5119Bb77F698, STEXAMM 0x39694eFF3b02248929120c73F90347013Aec834d, pool 0x5365b6EF09253C7aBc0A9286eC578A9f4B413B7D
+Full report with reproduction guide: https://github.com/choir94/valantis-stex-v01-pending-unstaking
 
 Duplicate check performed against all four public audit reports in the repository:
 
